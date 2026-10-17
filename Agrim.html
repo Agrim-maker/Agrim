@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMC - Expanded Forest Map RPG</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0b0b12;
+            color: #d4d4d4;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .game-container {
+            width: 1000px;
+            height: 600px;
+            background: linear-gradient(135deg, #1b3228, #0f1d24);
+            border: 4px solid #554422;
+            display: grid;
+            grid-template-columns: 280px 1fr 280px;
+            grid-template-rows: 1fr 120px;
+            box-shadow: 0 0 25px rgba(0,0,0,0.9);
+            position: relative;
+            overflow: hidden;
+        }
+        .panel {
+            background: rgba(17, 17, 29, 0.85);
+            border: 2px solid #665533;
+            margin: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            backdrop-filter: blur(4px);
+            z-index: 10;
+        }
+        .panel-title {
+            color: #ffd700;
+            font-size: 13px;
+            border-bottom: 1px solid #443322;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+        /* Expanded Map Viewport */
+        #viewport {
+            background: #23382d;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid #665533;
+            margin: 8px 0;
+        }
+        /* World Container that moves around the player */
+        #world {
+            position: absolute;
+            width: 1600px;
+            height: 1200px;
+            top: 0;
+            left: 0;
+            transform: translate(0px, 0px);
+        }
+        /* Expanded Trees across the map */
+        .tree {
+            position: absolute;
+            width: 70px;
+            height: 220px;
+            background: #14241c;
+            border-top-left-radius: 35px;
+            border-top-right-radius: 35px;
+            box-shadow: inset -8px 0 15px rgba(0,0,0,0.5);
+            z-index: 1;
+        }
+        .tree::before {
+            content: '';
+            position: absolute;
+            top: -40px;
+            left: -15px;
+            width: 100px;
+            height: 130px;
+            background: #1a3025;
+            border-radius: 50%;
+        }
+        
+        .storm-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 100, 255, 0.2);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 20;
+        }
+        .guild-building {
+            position: absolute;
+            top: 450px;
+            left: 720px;
+            text-align: center;
+            color: #f0e6d2;
+            font-weight: bold;
+            font-size: 16px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 2;
+        }
+        /* Player Avatar locked in center of viewport */
+        #player-avatar {
+            width: 32px;
+            height: 45px;
+            background: #2e7d32;
+            border: 2px solid #ffd700;
+            position: absolute;
+            left: 500px;
+            top: 300px;
+            transform: translate(-50%, -50%);
+            border-radius: 4px;
+            box-shadow: 0 0 12px rgba(0, 255, 204, 0.7);
+            z-index: 5;
+        }
+        #chat-log {
+            background: rgba(8, 8, 16, 0.9);
+            border: 1px solid #333;
+            flex-grow: 1;
+            font-size: 11px;
+            color: #88ff88;
+            padding: 5px;
+            overflow-y: auto;
+            max-height: 180px;
+        }
+        .typing-area {
+            grid-column: 1 / 4;
+            background: rgba(17, 17, 22, 0.95);
+            border-top: 3px solid #554422;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 10px 20px;
+            z-index: 10;
+        }
+        .typing-input-box {
+            width: 100%;
+            padding: 8px;
+            background: #080810;
+            border: 2px solid #ffd700;
+            color: #ffd700;
+            font-size: 16px;
+            font-family: 'Courier New', Courier, monospace;
+            outline: none;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .typing-input-box:focus {
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .bar-group {
+            width: 30%;
+        }
+        .bar-label {
+            font-size: 11px;
+            color: #aaa;
+            margin-bottom: 2px;
+        }
+        .bar-bg {
+            width: 100%;
+            height: 14px;
+            background: #222;
+            border: 1px solid #555;
+            position: relative;
+        }
+        .hp-fill {
+            width: 100%;
+            height: 100%;
+            background: #ff3344;
+        }
+        .mp-fill {
+            width: 100%;
+            height: 100%;
+            background: #3388ff;
+        }
+        .bar-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            font-size: 10px;
+            top: 0;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- Left Panel -->
+        <div class="panel">
+            <div class="panel-title">🛡️ BUFFS / STATUS</div>
+            <div id="status-text" style="font-size: 11px; color: #aaa;">No active effects.</div>
+            
+            <div class="panel-title" style="margin-top: 5px;">🌐 MULTI</div>
+            <div style="font-size: 11px; color: #ff5555;">Disconnected.</div>
+
+            <div class="panel-title" style="margin-top: 5px;">💬 CHAT LOG</div>
+            <div id="chat-log">
+                [17:59] Moved to Lindefie[cite: 2].<br>
+                [18:02] Accepted Main Quest[cite: 3].
+            </div>
+        </div>
+
+        <!-- Center Expanded Map Viewport -->
+        <div id="viewport">
+            <div class="storm-overlay" id="stormOverlay"></div>
+            <div id="world">
+                <!-- 冒険者ギルド -->
+                <div class="guild-building">🏛️ Adventurer's Guild</div>
+                <!-- 散りばめられた森の木々 -->
+                <div class="tree" style="top: 100px; left: 150px;"></div>
+                <div class="tree" style="top: 150px; left: 350px;"></div>
+                <div class="tree" style="top: 80px; left: 700px;"></div>
+                <div class="tree" style="top: 120px; left: 1050px;"></div>
+                <div class="tree" style="top: 400px; left: 200px;"></div>
+                <div class="tree" style="top: 450px; left: 1200px;"></div>
+                <div class="tree" style="top: 750px; left: 300px;"></div>
+                <div class="tree" style="top: 800px; left: 850px;"></div>
+                <div class="tree" style="top: 700px; left: 1150px;"></div>
+                <div class="tree" style="top: 250px; left: 1400px;"></div>
+            </div>
+            <div id="player-avatar"></div>
+            <div style="position: absolute; bottom: 5px; left: 10px; font-size: 10px; color: #ddd; z-index: 25;">
+                Controls: W, D, S, A | Type <b>ストーム</b> for magic!
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="panel">
+            <div class="panel-title">📜 QUEST LEDGER</div>
+            <div style="font-size: 11px; color: #ff007f;">ACTIVE (01)[cite: 3]</div>
+            <div style="font-size: 11px; background: rgba(26, 26, 46, 0.9); padding: 6px; border-left: 3px solid #ffd700; margin-top: 5px;">
+                <b>MAIN: Guild Card and First Record</b>[cite: 3]<br>
+                <span style="color: #aaa;">Origin: Mirabelle (Adventurer's Guild)[cite: 3]</span>
+            </div>
+        </div>
+
+        <!-- Bottom Typing & HUD Area -->
+        <div class="typing-area">
+            <div class="hud-row">
+                <div class="bar-group">
+                    <div class="bar-label">VITALITY / HP</div>
+                    <div class="bar-bg">
+                        <div class="hp-fill"></div>
+                        <div class="bar-text">185 / 185[cite: 2]</div>
+                    </div>
+                </div>
+                <div style="font-size: 13px; color: #ffd700; font-weight: bold;">Lv. 1 <span style="font-size: 10px; color: #aaa;">EXP 0 / 204</span>[cite: 2]</div>
+                <div class="bar-group">
+                    <div class="bar-label">ARCANA / MP</div>
+                    <div class="bar-bg">
+                        <div class="mp-fill"></div>
+                        <div class="bar-text">56 / 56[cite: 2]</div>
+                    </div>
+                </div>
+            </div>
+            <!-- Typing Input -->
+            <input type="text" id="type-box" class="typing-input-box" placeholder="Type 'ストーム' to cast magic..." autocomplete="off" autofocus>
+        </div>
+    </div>
+
+    <script>
+        // Web Audio Sound Generator
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playMagicSound() {
+            if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+
+            osc.start(now);
+            osc.stop(now + 0.6);
+        }
+
+        // Expanded World Map & Player Scroll Logic (W, D, S, A)
+        const world = document.getElementById("world");
+        let worldX = -220; // 初期位置調整
+        let worldY = -150;
+        const speed = 4;
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName !== 'INPUT') {
+                keys[e.key.toLowerCase()] = true;
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        function updateMovement() {
+            if (keys['w']) worldY += speed; // 上に歩く＝世界が下にスクロール
+            if (keys['s']) worldY -= speed; // 下に歩く＝世界が上にスクロール
+            if (keys['a']) worldX += speed; // 左に歩く＝世界が右にスクロール
+            if (keys['d']) worldX -= speed; // 右に歩く＝世界が左にスクロール
+
+            // マップの端（移動制限）
+            worldX = Math.max(-1100, Math.min(200, worldX));
+            worldY = Math.max(-800, Math.min(200, worldY));
+
+            world.style.transform = `translate(${worldX}px, ${worldY}px)`;
+            requestAnimationFrame(updateMovement);
+        }
+        updateMovement();
+
+        // Typing & Storm Magic Logic
+        const typeBox = document.getElementById("type-box");
+        const chatLog = document.getElementById("chat-log");
+        const stormOverlay = document.getElementById("stormOverlay");
+        const statusText = document.getElementById("status-text");
+
+        typeBox.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && typeBox.value.trim() !== "") {
+                const text = typeBox.value.trim();
+                const timeStr = new Date().toLocaleTimeString();
+
+                if (text === "ストーム" || text === "/cast ストーム") {
+                    playMagicSound();
+                    chatLog.innerHTML += `<br>[${timeStr}] ⚡ 呪文詠唱成功: ストーム発動！`;
+                    statusText.innerText = "⚡ 嵐 (Storm Buff Active)";
+                    statusText.style.color = "#00ffcc";
+
+                    // Storm Visual Flash
+                    stormOverlay.style.opacity = "1";
+                    setTimeout(() => { stormOverlay.style.opacity = "0.3"; }, 150);
+                    setTimeout(() => { stormOverlay.style.opacity = "0.8"; }, 300);
+                    setTimeout(() => { stormOverlay.style.opacity = "0"; }, 600);
+
+                } else if (text.startsWith("/")) {
+                    chatLog.innerHTML += `<br>[${timeStr}] ｺﾏンド実行: ${text}`;
+                } else {
+                    chatLog.innerHTML += `<br>[${timeStr}] You: ${text}`;
+                }
+
+                chatLog.scrollTop = chatLog.scrollHeight;
+                typeBox.value = "";
+            }
+        });
+    </script>
+</body>
+</html>
